@@ -702,10 +702,11 @@ renderRepeats();
   el.querySelectorAll('circle[data-t]').forEach(c=>{c.addEventListener('mousemove',e=>showTip(e,c.getAttribute('data-t')));c.addEventListener('mouseleave',hideTip);});});})();
 </script>
 <script>
-/* C-HAWQ dashboard loader: reads data/marco_wq_casts.csv, rebuilds the dashboard data,
+/* C-HAWQ dashboard loader: reads marco_wq_casts.csv (next to index.html, or in data/), rebuilds the dashboard data,
    fills the written findings, then starts the dashboard. Same rules as build_dashboard.py. */
 (function(){
-const CSV_URL='data/marco_wq_casts.csv';
+/* the CSV can sit next to index.html (preferred) or in a data/ folder */
+const CSV_URLS=['marco_wq_casts.csv','data/marco_wq_casts.csv'];
 const MON=['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const FULL=['','January','February','March','April','May','June','July','August','September','October','November','December'];
 const BOUNDS={S:25.875,W:-81.777,N:25.982,E:-81.662};
@@ -793,7 +794,11 @@ function findings(D){
 }
 function fail(msg){const t=document.getElementById('tiles');if(t)t.innerHTML=`<div class="callout" style="margin:0"><b>The water quality data didn't load.</b> ${msg}</div>`;}
 const t=document.getElementById('tiles');if(t)t.innerHTML='<div class="fcount">Loading water quality data&hellip;</div>';
-fetch(CSV_URL+'?v='+Date.now(),{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.text();}).then(txt=>{
+function getCSV(i){
+  if(i>=CSV_URLS.length)return Promise.reject(new Error('could not find marco_wq_casts.csv next to this page'));
+  return fetch(CSV_URLS[i]+'?v='+Date.now(),{cache:'no-store'}).then(r=>r.ok?r.text():getCSV(i+1),()=>getCSV(i+1));
+}
+getCSV(0).then(txt=>{
   const D=build(parseCSV(txt));
   if(!D.sites.length)throw new Error('the data file has no usable rows');
   const F=findings(D);
