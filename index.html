@@ -72,6 +72,9 @@ header .htxt p{margin:2px 0 0;color:#c7d6ec;font-size:15px;}
 .rephd b{font-family:var(--disp);font-size:18px;color:var(--navy);}
 .repsub{font-size:14px;color:var(--muted);margin:2px 0 4px;}
 .repchg{font-size:15px;font-weight:600;color:var(--ink);margin:2px 0 6px;}
+.repdates{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px;}
+.repdate{font-family:var(--disp);font-weight:700;font-size:12px;border:1px solid var(--navy);background:#fff;color:var(--navy);padding:5px 9px;border-radius:7px;cursor:pointer;}
+.repdate.on{background:var(--navy);color:#fff;}
 .repbtn{font-family:var(--disp);font-weight:700;font-size:12px;border:1px solid var(--navy);background:#fff;color:var(--navy);padding:5px 9px;border-radius:7px;cursor:pointer;white-space:nowrap;}
 .repcard svg{width:100%;height:auto;display:block;}
 .replegend{display:flex;flex-wrap:wrap;gap:18px;font-size:14px;color:var(--muted);margin-top:4px;align-items:center;}
@@ -311,7 +314,7 @@ footer .wrap{max-width:1280px;} footer b{color:#fff;} footer a{color:#fff;text-d
   </div>
   <div class="trendcard" id="repeatcard" style="margin-top:18px;">
     <div class="trendhd"><div class="eyebrow">Sites sampled more than once</div><p class="tsmall" id="repeatsub"></p></div>
-    <div class="replegend"><span><span class="sw"></span>Bottom oxygen (dots colored by rating)</span><span><span class="sw dash"></span>Surface oxygen</span><span>Shaded bands: green = healthy, amber = some stress, red = low oxygen</span></div>
+    <div class="replegend"><span><span class="sw"></span>Bottom oxygen (dots colored by rating)</span><span><span class="sw dash"></span>Surface oxygen</span><span>Shaded bands: green = healthy (5 mg/L and up), amber = some stress (2 to 5), red = low oxygen (below 2)</span></div>
     <div id="repeatgrid" class="repgrid"></div>
     <p class="swipehint">Swipe sideways to see more sites.</p>
     <p class="trendsrc">Repeat visits did not always happen at the same hour, and oxygen rises through daylight, so part of any change reflects the time of sampling. Hover over or tap a point to see when it was measured.</p>
@@ -620,7 +623,7 @@ function pcast(s){return s.casts[s.primary||0];}
 function stackChart(){
   const W=560,H=300,mL=18,mR=18,mT=30,mB=42,iw=W-mL-mR,ih=H-mT-mB,lo=0,hi=11;
   const X=v=>mL+(v-lo)/(hi-lo)*iw;let g='';
-  [[0,2,'#b4331f'],[2,5,'#d98e1a'],[5,11,'#3f886c']].forEach(([a,b,c])=>{g+=`<rect x="${X(a).toFixed(1)}" y="${mT}" width="${(X(b)-X(a)).toFixed(1)}" height="${ih}" fill="${c}" opacity="0.07"/>`;});
+  [[0,2,'#a3241a',0.18],[2,5,'#d98e1a',0.09],[5,11,'#3f886c',0.07]].forEach(([a,b,c,o])=>{g+=`<rect x="${X(a).toFixed(1)}" y="${mT}" width="${(X(b)-X(a)).toFixed(1)}" height="${ih}" fill="${c}" opacity="${o}"/>`;});
   for(let v=0;v<=11;v++){const x=X(v);g+=`<text x="${x.toFixed(1)}" y="${mT+ih+16}" font-size="10" fill="#8a94a1" text-anchor="middle" font-family="Source Sans 3">${v}</text>`;}
   [[2,'#b4331f','low 2'],[5,'#3f886c','healthy 5']].forEach(([v,c,l])=>{const x=X(v);g+=`<line x1="${x.toFixed(1)}" y1="${mT}" x2="${x.toFixed(1)}" y2="${mT+ih}" stroke="${c}" stroke-width="1.5" stroke-dasharray="4 3"/><text x="${x.toFixed(1)}" y="${mT-7}" font-size="10" fill="${c}" text-anchor="middle" font-family="Source Sans 3">${l}</text>`;}
   );
@@ -663,37 +666,57 @@ function repeatSites(){return DATA.sites.filter(s=>nDates(s)>1).map(s=>{
   const byDate={};s.casts.forEach((c,i)=>{byDate[c.date]=Object.assign({i},c);});
   return {s,pts:Object.values(byDate).sort((a,b)=>a.date<b.date?-1:1)};});}
 function fmtHr(h){if(h==null)return'';const hh=Math.floor(h),mm=Math.round((h-hh)*60);return `${((hh+11)%12)+1}:${String(mm).padStart(2,'0')} ${hh<12?'AM':'PM'}`;}
+const repHidden={};   /* site number -> set of dates the reader switched off */
+let REP=null;
 function renderRepeats(){
   const card=document.getElementById('repeatcard'),grid=document.getElementById('repeatgrid');if(!card)return;
   const R=repeatSites();if(!R.length){card.style.display='none';return;}
   const allD=[...new Set(R.flatMap(r=>r.pts.map(p=>p.date)))].sort();
   const t=d=>Date.parse(d+'T12:00:00Z')/864e5, t0=t(allD[0]), t1=t(allD[allD.length-1]);
   const ymax=Math.max(10,Math.ceil(Math.max(...R.flatMap(r=>r.pts.flatMap(p=>[p.bottom.do||0,p.surface.do||0])))));
-  document.getElementById('repeatsub').textContent=`${R.length} locations have been sampled on more than one date. Each panel tracks the same location week to week, from ${fmtShort(allD[0])} to ${fmtShort(allD[allD.length-1])}.`;
-  const W=340,H=220,mL=34,mR=14,mT=12,mB=34,iw=W-mL-mR,ih=H-mT-mB;
+  document.getElementById('repeatsub').textContent=`${R.length} locations have been sampled on more than one date. Each panel tracks the same location week to week, from ${fmtShort(allD[0])} to ${fmtShort(allD[allD.length-1])}. Use the date buttons in each panel to show or hide a visit.`;
+  const W=340,H=226,mL=46,mR=14,mT=12,mB=40,iw=W-mL-mR,ih=H-mT-mB;
   const pad=Math.max(1,(t1-t0)*0.06);
   const X=d=>mL+((t(d)-(t0-pad))/((t1+pad)-(t0-pad)))*iw, Y=v=>mT+ih-(v/ymax)*ih;
   const step=Math.ceil(allD.length/6);
-  grid.innerHTML=R.map(({s,pts})=>{
-    let g='';
-    [[0,2,'#b4331f'],[2,5,'#d98e1a'],[5,ymax,'#3f886c']].forEach(([a,b,c])=>{g+=`<rect x="${mL}" y="${Y(b).toFixed(1)}" width="${iw}" height="${(Y(a)-Y(b)).toFixed(1)}" fill="${c}" opacity="0.08"/>`;});
-    for(let v=0;v<=ymax;v+=2){g+=`<text x="${mL-6}" y="${(Y(v)+3).toFixed(1)}" font-size="10" fill="#8a94a1" text-anchor="end" font-family="Source Sans 3">${v}</text>`;}
-    allD.forEach((d,k)=>{const x=X(d);g+=`<line x1="${x.toFixed(1)}" y1="${mT}" x2="${x.toFixed(1)}" y2="${mT+ih}" stroke="#eef2f7"/>`;if(k%step===0||k===allD.length-1)g+=`<text x="${x.toFixed(1)}" y="${mT+ih+14}" font-size="10" fill="#8a94a1" text-anchor="middle" font-family="Source Sans 3">${fmtShort(d)}</text>`;});
-    g+=`<line x1="${mL}" y1="${mT+ih}" x2="${mL+iw}" y2="${mT+ih}" stroke="#c8d1dd"/>`;
-    g+=`<text x="${mL+iw/2}" y="${H-3}" font-size="10.5" fill="#5c6672" text-anchor="middle" font-family="Source Sans 3">Oxygen (mg/L) by sampling date</text>`;
-    const sp=pts.filter(p=>p.surface.do!=null),bp=pts.filter(p=>p.bottom.do!=null);
-    if(sp.length>1)g+=`<path d="${sp.map((p,i)=>`${i?'L':'M'}${X(p.date).toFixed(1)} ${Y(p.surface.do).toFixed(1)}`).join(' ')}" fill="none" stroke="#7f9bc4" stroke-width="2" stroke-dasharray="5 4"/>`;
-    sp.forEach(p=>{g+=`<circle cx="${X(p.date).toFixed(1)}" cy="${Y(p.surface.do).toFixed(1)}" r="4" fill="#fff" stroke="#7f9bc4" stroke-width="2" data-t="${fmtShort(p.date)}${p.hour!=null?', '+fmtHr(p.hour):''} &middot; surface ${p.surface.do.toFixed(1)} mg/L"/>`;});
-    if(bp.length>1)g+=`<path d="${bp.map((p,i)=>`${i?'L':'M'}${X(p.date).toFixed(1)} ${Y(p.bottom.do).toFixed(1)}`).join(' ')}" fill="none" stroke="#1f396d" stroke-width="2.6"/>`;
-    bp.forEach(p=>{g+=`<circle cx="${X(p.date).toFixed(1)}" cy="${Y(p.bottom.do).toFixed(1)}" r="6" fill="${VC[p.verdict]}" stroke="#fff" stroke-width="1.6" data-t="${fmtShort(p.date)}${p.hour!=null?', '+fmtHr(p.hour):''} &middot; bottom ${p.bottom.do.toFixed(1)} mg/L"/>`;});
-    const f=bp[0],l=bp[bp.length-1],dlt=l.bottom.do-f.bottom.do;
-    const chg=Math.abs(dlt)<0.3?`Bottom oxygen about the same as ${fmtShort(f.date)}`:`Bottom oxygen ${dlt>0?'up':'down'} ${Math.abs(dlt).toFixed(1)} mg/L since ${fmtShort(f.date)}`;
-    return `<div class="repcard"><div class="rephd"><b>Site ${s.n}</b><button class="repbtn" onclick="showSite(${s.n})">See on map</button></div>
-      <div class="repsub">${pts.length} visits &middot; latest: <span style="color:${VC[l.verdict]};font-weight:700">${VLABEL[l.verdict].toLowerCase()}</span></div>
-      <div class="repchg">${chg}</div>
-      <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Site ${s.n} oxygen at each visit">${g}</svg></div>`;
-  }).join('');
+  REP={R,allD,X,Y,ymax,W,H,mL,mT,iw,ih,step};
+  R.forEach(r=>{if(!repHidden[r.s.n])repHidden[r.s.n]=new Set();});
+  grid.innerHTML=R.map(r=>`<div class="repcard" id="rep-${r.s.n}">${repCard(r)}</div>`).join('');
   bindTips(grid);
+}
+function repCard({s,pts}){
+  const {allD,X,Y,ymax,W,H,mL,mT,iw,ih,step}=REP, hid=repHidden[s.n];
+  const on=pts.filter(p=>!hid.has(p.date));
+  let g='';
+  [[0,2,'#a3241a',0.22],[2,5,'#d98e1a',0.10],[5,ymax,'#3f886c',0.08]].forEach(([a,b,c,o])=>{g+=`<rect x="${mL}" y="${Y(b).toFixed(1)}" width="${iw}" height="${(Y(a)-Y(b)).toFixed(1)}" fill="${c}" opacity="${o}"/>`;});
+  g+=`<line x1="${mL}" y1="${Y(2).toFixed(1)}" x2="${mL+iw}" y2="${Y(2).toFixed(1)}" stroke="#a3241a" stroke-width="1.2" stroke-dasharray="4 3"/>`;
+  g+=`<line x1="${mL}" y1="${Y(5).toFixed(1)}" x2="${mL+iw}" y2="${Y(5).toFixed(1)}" stroke="#3f886c" stroke-width="1.2" stroke-dasharray="4 3"/>`;
+  for(let v=0;v<=ymax;v+=2){g+=`<text x="${mL-6}" y="${(Y(v)+3).toFixed(1)}" font-size="10" fill="#8a94a1" text-anchor="end" font-family="Source Sans 3">${v}</text>`;}
+  allD.forEach((d,k)=>{const x=X(d);g+=`<line x1="${x.toFixed(1)}" y1="${mT}" x2="${x.toFixed(1)}" y2="${mT+ih}" stroke="#eef2f7"/>`;if(k%step===0||k===allD.length-1)g+=`<text x="${x.toFixed(1)}" y="${mT+ih+14}" font-size="10" fill="#8a94a1" text-anchor="middle" font-family="Source Sans 3">${fmtShort(d)}</text>`;});
+  g+=`<line x1="${mL}" y1="${mT}" x2="${mL}" y2="${mT+ih}" stroke="#c8d1dd"/><line x1="${mL}" y1="${mT+ih}" x2="${mL+iw}" y2="${mT+ih}" stroke="#c8d1dd"/>`;
+  g+=`<text transform="translate(12,${(mT+ih/2).toFixed(1)}) rotate(-90)" font-size="10.5" fill="#5c6672" text-anchor="middle" font-family="Source Sans 3" font-weight="600">Oxygen (mg/L)</text>`;
+  g+=`<text x="${(mL+iw/2).toFixed(1)}" y="${H-4}" font-size="10.5" fill="#5c6672" text-anchor="middle" font-family="Source Sans 3" font-weight="600">Sampling date</text>`;
+  const sp=on.filter(p=>p.surface.do!=null),bp=on.filter(p=>p.bottom.do!=null);
+  if(sp.length>1)g+=`<path d="${sp.map((p,i)=>`${i?'L':'M'}${X(p.date).toFixed(1)} ${Y(p.surface.do).toFixed(1)}`).join(' ')}" fill="none" stroke="#7f9bc4" stroke-width="2" stroke-dasharray="5 4"/>`;
+  sp.forEach(p=>{g+=`<circle cx="${X(p.date).toFixed(1)}" cy="${Y(p.surface.do).toFixed(1)}" r="4" fill="#fff" stroke="#7f9bc4" stroke-width="2" data-t="${fmtShort(p.date)}${p.hour!=null?', '+fmtHr(p.hour):''} &middot; surface ${p.surface.do.toFixed(1)} mg/L"/>`;});
+  if(bp.length>1)g+=`<path d="${bp.map((p,i)=>`${i?'L':'M'}${X(p.date).toFixed(1)} ${Y(p.bottom.do).toFixed(1)}`).join(' ')}" fill="none" stroke="#1f396d" stroke-width="2.6"/>`;
+  bp.forEach(p=>{g+=`<circle cx="${X(p.date).toFixed(1)}" cy="${Y(p.bottom.do).toFixed(1)}" r="6" fill="${VC[p.verdict]}" stroke="#fff" stroke-width="1.6" data-t="${fmtShort(p.date)}${p.hour!=null?', '+fmtHr(p.hour):''} &middot; bottom ${p.bottom.do.toFixed(1)} mg/L"/>`;});
+  let chg;
+  if(bp.length<2){chg=bp.length?`Showing one visit (${fmtShort(bp[0].date)}). Turn on another date to see the change.`:'Turn on a date to see its readings.';}
+  else{const f=bp[0],l=bp[bp.length-1],dlt=l.bottom.do-f.bottom.do;
+    chg=Math.abs(dlt)<0.3?`Bottom oxygen about the same as ${fmtShort(f.date)}`:`Bottom oxygen ${dlt>0?'up':'down'} ${Math.abs(dlt).toFixed(1)} mg/L since ${fmtShort(f.date)}`;}
+  const last=pts[pts.length-1];
+  const btns=pts.map(p=>{const isOn=!hid.has(p.date);return `<button class="repdate${isOn?' on':''}" aria-pressed="${isOn}" onclick="toggleRepDate(${s.n},'${p.date}')" title="${isOn?'Hide':'Show'} the ${fmtShort(p.date)} visit">${isOn?'&#10003; ':''}${fmtShort(p.date)}</button>`;}).join('');
+  return `<div class="rephd"><b>Site ${s.n}</b><button class="repbtn" onclick="showSite(${s.n})">See on map</button></div>
+    <div class="repsub">${pts.length} visits &middot; latest: <span style="color:${VC[last.verdict]};font-weight:700">${VLABEL[last.verdict].toLowerCase()}</span></div>
+    <div class="repchg">${chg}</div>
+    <div class="repdates" role="group" aria-label="Show or hide visits for Site ${s.n}">${btns}</div>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Site ${s.n} oxygen at each visit">${g}</svg>`;
+}
+function toggleRepDate(n,d){
+  const hid=repHidden[n];if(hid.has(d))hid.delete(d);else hid.add(d);
+  const r=REP.R.find(x=>x.s.n===n),el=document.getElementById('rep-'+n);
+  if(r&&el){el.innerHTML=repCard(r);bindTips(el);}
 }
 function showSite(n){allDays();select(n);document.getElementById('map').scrollIntoView({behavior:'smooth',block:'center'});const mk=markers[n];if(mk){map.setView(mk.getLatLng(),Math.max(map.getZoom(),14));}}
 renderRepeats();
